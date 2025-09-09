@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris Personalizado</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            background-color: #1a1a1a;
+            color: #eee;
+            font-family: 'Press Start 2P', cursive;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        #game-container {
+            display: flex;
+            gap: 20px;
+            background-color: #333;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            border: 4px solid #444;
+            max-height: 95vh;
+            box-sizing: border-box;
+        }
+
+        #game-board {
+            display: grid;
+            background-color: #000;
+            border: 2px solid #555;
+            flex-shrink: 0;
+            /* A largura é a metade da altura para manter a proporção 10x20 */
+            height: calc(100vw * 2 / 3); /* Ajuste dinâmico para telas pequenas */
+            width: calc(100vw / 3);
+            max-height: 80vh;
+            max-width: 40vh;
+        }
+        
+        @media (min-height: 500px) and (min-width: 400px) {
+            #game-board {
+                height: 80vh;
+                width: calc(80vh / 2);
+            }
+        }
+
+
+        .tetromino {
+            border: 1px solid #222;
+        }
+
+        .I { background-color: #00ffff; }
+        .J { background-color: #0000ff; }
+        .L { background-color: #ffaa00; }
+        .O { background-color: #ffff00; }
+        .S { background-color: #00ff00; }
+        .T { background-color: #800080; }
+        .Z { background-color: #ff0000; }
+
+        #side-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            min-width: 150px;
+            text-align: center;
+            justify-content: space-between;
+        }
+        
+        #score-panel {
+            background-color: #222;
+            padding: 10px;
+            border-radius: 8px;
+            border: 2px solid #444;
+        }
+
+        #start-button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 4px #2e7d32;
+            transition: all 0.1s ease;
+        }
+
+        #start-button:active {
+            box-shadow: 0 2px #2e7d32;
+            transform: translateY(2px);
+        }
+
+        #game-over-screen {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        
+        @media (max-width: 600px) {
+            #game-container {
+                flex-direction: column;
+                align-items: center;
+            }
+            #side-panel {
+                flex-direction: row;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 10px;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-board"></div>
+        <div id="side-panel">
+            <div id="score-panel">
+                <p>Score: <span id="score">0</span></p>
+            </div>
+            <div>
+                <label for="speed-select" style="display: block; margin-bottom: 5px;">Velocidade:</label>
+                <select id="speed-select" style="color: #000; font-family: 'Press Start 2P', cursive; padding: 5px; border-radius: 5px;">
+                    <option value="easy">Fácil</option>
+                    <option value="medium" selected>Médio</option>
+                    <option value="hard">Difícil</option>
+                </select>
+            </div>
+            <button id="start-button">Começar</button>
+        </div>
+    </div>
+    
+    <div id="game-over-screen">
+        <h1>FIM DE JOGO</h1>
+        <p>Sua Pontuação: <span id="final-score">0</span></p>
+        <button onclick="window.location.reload()" style="background-color: #f44336; padding: 10px; border: none; color: white; border-radius: 5px; font-family: 'Press Start 2P', cursive; cursor: pointer; margin-top: 20px;">Reiniciar</button>
+    </div>
+
+    <script>
+        const boardWidth = 10;
+        const boardHeight = 20;
+        const board = document.getElementById('game-board');
+        const scoreSpan = document.getElementById('score');
+        const startButton = document.getElementById('start-button');
+        const speedSelect = document.getElementById('speed-select');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreSpan = document.getElementById('final-score');
+
+        let grid;
+        let currentPiece;
+        let score = 0;
+        let gameOver = false;
+        let dropInterval;
+
+        const tetrominoes = {
+            'I': [[1, 1, 1, 1]],
+            'O': [[1, 1], [1, 1]],
+            'T': [[0, 1, 0], [1, 1, 1]],
+            'L': [[0, 0, 1], [1, 1, 1]],
+            'J': [[1, 0, 0], [1, 1, 1]],
+            'Z': [[1, 1, 0], [0, 1, 1]],
+            'S': [[0, 1, 1], [1, 1, 0]]
+        };
+
+        function createBoard() {
+            board.innerHTML = '';
+            board.style.gridTemplateColumns = `repeat(${boardWidth}, 1fr)`;
+            board.style.gridTemplateRows = `repeat(${boardHeight}, 1fr)`;
+            for (let i = 0; i < boardWidth * boardHeight; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('tetromino');
+                board.appendChild(cell);
+            }
+            grid = Array.from({ length: boardHeight }, () => Array(boardWidth).fill(0));
+        }
+
+        function getRandomPiece() {
+            const keys = Object.keys(tetrominoes);
+            const randomKey = keys[Math.floor(Math.random() * keys.length)];
+            return {
+                shape: tetrominoes[randomKey],
+                color: randomKey,
+                x: Math.floor(boardWidth / 2) - Math.ceil(tetrominoes[randomKey][0].length / 2),
+                y: 0
+            };
+        }
+
+        function spawnPiece() {
+            currentPiece = getRandomPiece();
+            if (!canMove(currentPiece, 0, 0)) {
+                endGame();
+            }
+        }
+
+        function draw() {
+            for (let r = 0; r < boardHeight; r++) {
+                for (let c = 0; c < boardWidth; c++) {
+                    const cell = board.children[r * boardWidth + c];
+                    if (grid[r][c] !== 0) {
+                        cell.classList.add(grid[r][c]);
+                    } else {
+                        cell.className = 'tetromino';
+                    }
+                }
+            }
+            const shape = currentPiece.shape;
+            const color = currentPiece.color;
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        const row = currentPiece.y + r;
+                        const col = currentPiece.x + c;
+                        if (row >= 0 && row < boardHeight && col >= 0 && col < boardWidth) {
+                            const cell = board.children[row * boardWidth + col];
+                            cell.classList.add(color);
+                        }
+                    }
+                }
+            }
+        }
+
+        function canMove(piece, dx, dy) {
+            const shape = piece.shape;
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        const newRow = piece.y + r + dy;
+                        const newCol = piece.x + c + dx;
+                        if (newCol < 0 || newCol >= boardWidth || newRow >= boardHeight || (newRow >= 0 && grid[newRow][newCol] !== 0)) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        function rotate(piece) {
+            const oldShape = piece.shape;
+            const newShape = [];
+            for (let c = 0; c < oldShape[0].length; c++) {
+                newShape.push([]);
+                for (let r = oldShape.length - 1; r >= 0; r--) {
+                    newShape[c].push(oldShape[r][c]);
+                }
+            }
+            const rotatedPiece = { ...piece, shape: newShape };
+            if (canMove(rotatedPiece, 0, 0)) {
+                piece.shape = newShape;
+            }
+        }
+
+        function lockPiece() {
+            const shape = currentPiece.shape;
+            for (let r = 0; r < shape.length; r++) {
+                for (let c = 0; c < shape[r].length; c++) {
+                    if (shape[r][c]) {
+                        grid[currentPiece.y + r][currentPiece.x + c] = currentPiece.color;
+                    }
+                }
+            }
+            checkLines();
+            spawnPiece();
+        }
+
+        function checkLines() {
+            let linesCleared = 0;
+            for (let r = boardHeight - 1; r >= 0; r--) {
+                if (grid[r].every(cell => cell !== 0)) {
+                    grid.splice(r, 1);
+                    grid.unshift(Array(boardWidth).fill(0));
+                    linesCleared++;
+                    r++;
+                }
+            }
+            if (linesCleared > 0) {
+                updateScore(linesCleared);
+            }
+        }
+
+        function updateScore(lines) {
+            const scoreMultiplier = [0, 100, 300, 500, 800];
+            score += scoreMultiplier[lines];
+            scoreSpan.textContent = score;
+        }
+
+        function endGame() {
+            gameOver = true;
+            clearInterval(dropInterval);
+            finalScoreSpan.textContent = score;
+            gameOverScreen.style.display = 'block';
+        }
+
+        function gameLoop() {
+            if (!gameOver) {
+                if (canMove(currentPiece, 0, 1)) {
+                    currentPiece.y++;
+                } else {
+                    lockPiece();
+                }
+                draw();
+            }
+        }
+
+        function startGame() {
+            const selectedSpeed = speedSelect.value;
+            let dropSpeed;
+            if (selectedSpeed === 'easy') {
+                dropSpeed = 1000;
+            } else if (selectedSpeed === 'medium') {
+                dropSpeed = 500;
+            } else {
+                dropSpeed = 200;
+            }
+
+            startButton.style.display = 'none';
+            speedSelect.style.display = 'none';
+            document.querySelector('label[for="speed-select"]').style.display = 'none';
+            gameOverScreen.style.display = 'none';
+
+            score = 0;
+            gameOver = false;
+            scoreSpan.textContent = score;
+            
+            createBoard();
+            spawnPiece();
+            dropInterval = setInterval(gameLoop, dropSpeed);
+
+            document.addEventListener('keydown', handleKeyPress);
+        }
+
+        function handleKeyPress(e) {
+            if (gameOver) return;
+            switch (e.key.toLowerCase()) { // Converte para minúscula para aceitar 'W' ou 'w', por exemplo
+                case 'a':
+                    if (canMove(currentPiece, -1, 0)) {
+                        currentPiece.x--;
+                    }
+                    break;
+                case 'd':
+                    if (canMove(currentPiece, 1, 0)) {
+                        currentPiece.x++;
+                    }
+                    break;
+                case 's':
+                    if (canMove(currentPiece, 0, 1)) {
+                        currentPiece.y++;
+                    } else {
+                        lockPiece();
+                    }
+                    break;
+                case 'w':
+                    rotate(currentPiece);
+                    break;
+                case ' ': // Espaço para queda instantânea
+                    while(canMove(currentPiece, 0, 1)) {
+                        currentPiece.y++;
+                    }
+                    lockPiece();
+                    break;
+            }
+            draw();
+        }
+
+        startButton.addEventListener('click', startGame);
+
+    </script>
+</body>
+</html>
